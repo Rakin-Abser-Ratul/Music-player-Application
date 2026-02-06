@@ -15,16 +15,13 @@ namespace Music_player_Application.Controllers
     {
         private readonly ILogger<HomeController> _logger;
         [ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
-        public IActionResult Index(long incomingSeed = 58933423, double incomingLikes = 5.0, string lang = "en-US", string viewType = "table", int page = 1)
+        public IActionResult Index(long incomingSeed = 58932423, double incomingLikes = 5.0, string lang = "en-US", string viewType = "table", int page = 1)
         {
-            // Store viewType so the Index.cshtml can use it in @if statements
             ViewBag.ViewType = viewType;
-
             var locale = lang.Split('-')[0];
             var songs = new List<MusicProperties>();
             const double charsPerSec = 13.0;
             const int pageSize = 15;
-
             int startAt = (page - 1) * pageSize;
 
             for (int i = 0; i < pageSize; i++)
@@ -41,43 +38,81 @@ namespace Music_player_Application.Controllers
 
                 if (locale == "uk")
                 {
-                    var ukGenres = new[] { "Рок", "Поп", "Джаз", "Фолк", "Класика", "Електроніка", "Реп", "Метал", "Інді" };
-                    song.Genre = f.PickRandom(ukGenres);
-                    var adj = new[] { "Таємничий", "Золотий", "Останній", "Вечірній", "Вільний" };
-                    song.song = f.PickRandom(adj) + " " + f.Name.JobTitle();
+                    var ukGenres = new[] {
+                "Рок", "Поп", "Джаз", "Фолк", "Класика", "Електроніка", "Реп", "Метал", "Інді",
+                "Синті-поп", "Техно", "Блюз", "Психоделіка", "Гранж", "Дабстеп", "Етно",
+                "Транс", "Соул", "Фанк", "Хардкор", "Панк", "Диско", "Лоу-фай"
+            };
+
+                    var adj = new[] {
+                "Таємничий", "Золотий", "Останній", "Вечірній", "Вільний", "Забутий",
+                "Швидкий", "Глибокий", "Нічний", "Прозорий", "Сталевий", "Мрійливий",
+                "Космічний", "Далекий", "Рідний", "Дикий", "Світлий", "Крижаний",
+                "Гірський", "Лісовий", "Міський", "Ранковий", "Північний", "Весняний"
+            };
+
+                    var ukLyricLines = new[] {
+                "Ми шукаємо {0}.",
+                "Це наш {1} звук у ночі.",
+                "Ритм міста {0} б'ється в серці.",
+                "Тут панує {1} мелодія.",
+                "Відчуй, як {0} засинає під цей спів.",
+                "Тільки {1} голос веде нас вперед.",
+                "Світло згасло у {0}, лишилась музика.",
+                "Наш {1} стиль не зупинити.",
+                "Спогади про {0} летять крізь час.",
+                "Це справжній {1} драйв!"
+            };
+
+                    song.Genre = ukGenres[currentItemIndex % ukGenres.Length];
+                    string selectedAdj = adj[currentItemIndex % adj.Length];
+
+                    song.song = $"{selectedAdj} {f.Name.JobTitle()}";
                     song.Album = f.Address.City() + " Selection";
                     song.record = f.Company.CompanyName() + " Рекордс";
 
-                    // Using a loop to grow the lyrics
-                    string builtLyrics = "";
+                    // 3. DETERMINISTIC LYRICS USING THE LIBRARY
+                    var lyricsBuilder = new System.Text.StringBuilder();
+
+                    // Generate a unique chorus for this song based on currentItemIndex
+                    string chorus = $"Це наш {f.Name.JobArea()} ритм у місті {f.Address.City()}.";
+
                     for (int j = 0; j < 12; j++)
                     {
-                        builtLyrics += $"Ми шукаємо {f.Address.City()}. Це наш {f.Name.JobArea()} звук. \n";
+                        if (j > 0 && j % 4 == 0) // Add a Chorus line every 4 lines
+                        {
+                            lyricsBuilder.AppendLine($"[Приспів] {chorus}");
+                        }
+                        else
+                        {
+                            // Pick a phrase from the library based on index + line number
+                            string template = ukLyricLines[(currentItemIndex + j) % ukLyricLines.Length];
+                            lyricsBuilder.AppendLine(string.Format(template, f.Address.City(), f.Name.JobArea()));
+                        }
                     }
-
-                    song.Lyrics = builtLyrics;
+                    song.Lyrics = lyricsBuilder.ToString();
                 }
                 else
                 {
+                    // ... (keep existing English logic) ...
                     song.Genre = f.Music.Genre();
                     song.song = f.Commerce.ProductName();
                     song.Album = f.Commerce.Department();
                     song.record = f.Company.CompanyName() + " Records";
 
-                    // Build bigger lyrics using a loop
-                    string builtLyrics = "";
+                    var lyricsBuilder = new System.Text.StringBuilder();
                     for (int j = 0; j < 12; j++)
                     {
-                        // Adding a review and a new line each time
-                        builtLyrics += f.Rant.Review("music") + " " + f.Address.City() + "\n";
+                        lyricsBuilder.AppendLine(f.Rant.Review("music") + " " + f.Address.City());
                     }
-
-                    // Combine the looped lyrics with a final catchphrase
-                    song.Lyrics = $"{builtLyrics}\n{f.Company.CatchPhrase()}";
+                    song.Lyrics = $"{lyricsBuilder}\n{f.Company.CatchPhrase()}";
                 }
+
+                // Duration calculation
                 int seconds = (int)Math.Ceiling(song.Lyrics.Length / charsPerSec);
                 song.duration = TimeSpan.FromSeconds(seconds).ToString(@"m\:ss");
 
+                // Consistent Likes logic
                 var likeRng = new Random((int)(incomingSeed + currentItemIndex + 999));
                 int baseLikes = (int)Math.Floor(incomingLikes);
                 song.Likes = (likeRng.NextDouble() < (incomingLikes - baseLikes)) ? baseLikes + 1 : baseLikes;

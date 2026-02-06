@@ -1,16 +1,13 @@
 ﻿@model IEnumerable<Music_player_Application.Models.MusicProperties>
 @{
-    // 1. Context & State Detection
     bool isAjax = Context.Request.Headers["X-Requested-With"] == "XMLHttpRequest";
     if (isAjax) { Layout = null; }
 
     var viewType = ViewBag.ViewType ?? Context.Request.Query["viewType"].ToString() ?? "table";
     var currentLang = Context.Request.Query["lang"].ToString() ?? "en-US";
-    var currentSeed = Context.Request.Query["incomingSeed"].ToString() ?? "58933423";
     int currentPage = int.TryParse(Context.Request.Query["page"], out var p) ? p : 1;
     bool isUk = currentLang.StartsWith("uk");
 
-    // 2. Localization
     string hSong = isUk ? "Пісня" : "Song";
     string hArtist = isUk ? "Виконавець" : "Artist";
     string hAlbum = isUk ? "Альбом" : "Album";
@@ -25,60 +22,26 @@
     int itemIndex = ((currentPage - 1) * 15) + 1;
 }
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
-    /* Table Styling */
     .chevron-icon { transition: transform 0.3s ease; }
     tr:not(.collapsed) .chevron-icon { transform: rotate(180deg); }
-
-    .lyrics-tab {
-        border: 1px solid #dee2e6;
-        border-bottom: none;
-        display: inline-block;
-        padding: 6px 16px;
-        border-radius: 6px 6px 0 0;
-        background: #fff;
-        font-weight: 600;
-        font-size: 0.85rem;
-        position: relative;
-        top: 1px;
-    }
-
+    .lyrics-tab { border: 1px solid #dee2e6; border-bottom: none; display: inline-block; padding: 6px 16px; border-radius: 6px 6px 0 0; background: #fff; font-weight: 600; font-size: 0.85rem; position: relative; top: 1px; }
     .stop-active { color: #dc3545 !important; }
-
-    /* Gallery Grid */
-    .full-width-music-grid {
-        display: flex;
-        flex-wrap: wrap;
-        margin: 0 -10px;
-        width: 100%;
-    }
-
-    .music-item {
-        flex: 0 0 33.333%;
-        padding: 10px;
-    }
-
+    .full-width-music-grid { display: flex; flex-wrap: wrap; margin: 0 -10px; width: 100%; }
+    .music-item { flex: 0 0 33.333%; padding: 10px; }
     .music-card:hover .play-btn-overlay { opacity: 1 !important; }
-
-    /* Pagination Styling */
     .pagination .page-link { cursor: pointer; color: #0d6efd; background: #fff; }
-    .pagination .page-item.active .page-link {
-        background-color: #0d6efd;
-        color: #fff;
-        border-color: #0d6efd;
-    }
-
+    .pagination .page-item.active .page-link { background-color: #0d6efd; color: #fff; border-color: #0d6efd; }
     @@media (max-width: 992px) { .music-item { flex: 0 0 50%; } }
     @@media (max-width: 576px) { .music-item { flex: 0 0 100%; } }
 </style>
 
 @if (viewType == "gallery")
 {
-    if (!isAjax || currentPage == 1)
-    {
-        @:<div class="full-width-music-grid">
+    if (!isAjax || currentPage == 1) { @:<div class="full-width-music-grid"> 
     }
-
     @foreach (var item in Model)
     {
         <div class="music-item">
@@ -100,10 +63,7 @@
             </div>
         </div>
     }
-
-    if (!isAjax || currentPage == 1)
-    {
-        @:</div>
+    if (!isAjax || currentPage == 1) { @:</div> 
     }
 }
 else
@@ -151,15 +111,19 @@ else
                                             <span class="badge bg-dark rounded-pill px-3 py-2">@item.duration</span>
                                         </div>
 
-                                        @* --- ACTION BAR WITH UPDATED SAVE BUTTON --- *@
                                         <div class="bg-white p-3 rounded border my-3 d-flex align-items-center gap-3 shadow-sm">
                                             <i class="bi bi-play-circle-fill text-primary display-6 play-trigger" style="cursor:pointer" data-song-id="@item.SongId"></i>
                                             <div class="progress flex-grow-1" style="height: 10px;">
                                                 <div class="progress-bar progress-bar-striped progress-bar-animated" id="seek-@item.SongId" style="width: 0%"></div>
                                             </div>
                                             <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-2" 
-                                                    onclick="downloadAsText('@item.song.Replace("'", "\\'")', '@item.Artist.Replace("'", "\\'")', '@item.Album.Replace("'", "\\'")', '@item.Year', document.getElementById('lyric-@item.SongId').value)">
-                                                <i class="bi bi-download"></i> @lblDownload
+                                                    onclick="downloadAsZip(
+                                                        '@Html.Raw(System.Web.HttpUtility.JavaScriptStringEncode(item.song))', 
+                                                        '@Html.Raw(System.Web.HttpUtility.JavaScriptStringEncode(item.Artist))', 
+                                                        '@Html.Raw(System.Web.HttpUtility.JavaScriptStringEncode(item.Album))', 
+                                                        '@item.Year', 
+                                                        document.getElementById('lyric-@item.SongId').value)">
+                                                <i class="bi bi-floppy"></i> @lblDownload
                                             </button>
                                         </div>
 
@@ -185,23 +149,18 @@ else
                 int startPage = Math.Max(1, currentPage - 2);
                 int endPage = startPage + maxPagesToShow - 1;
             }
-
             <li class="page-item @(currentPage == 1 ? "disabled" : "")">
                 <button class="page-link border-0 px-3" onclick="changePage(@(currentPage - 1))" type="button">
                     <i class="bi bi-chevron-left"></i> @lblPrev
                 </button>
             </li>
-
             @for (int i = startPage; i <= endPage; i++)
             {
                 var pageNum = i;
                 <li class="page-item @(currentPage == pageNum ? "active" : "")">
-                    <button class="page-link border-0 px-3" onclick="changePage(@pageNum)" type="button">
-                        @pageNum
-                    </button>
+                    <button class="page-link border-0 px-3" onclick="changePage(@pageNum)" type="button">@pageNum</button>
                 </li>
             }
-
             <li class="page-item">
                 <button class="page-link border-0 px-3" onclick="changePage(@(currentPage + 1))" type="button">
                     @lblNext <i class="bi bi-chevron-right"></i>
@@ -212,65 +171,173 @@ else
 }
 
 <script>
-    (function() {
-        const synth = window.speechSynthesis;
-        
-        const playHandler = (e) => {
-            const btn = e.target.closest('.play-trigger');
-            if (!btn) return;
-            const id = btn.getAttribute('data-song-id');
+(function() {
+    const synth = window.speechSynthesis;
+    let audioCtx = null;
+    let isPlayingMusic = false;
 
-            if (window.activeSongId === id && synth.speaking) {
-                stopPlayback();
-                return;
+    window.downloadAsZip = async function(song, artist, album, year, lyrics) {
+        try {
+            const zip = new JSZip();
+            const content = `SONG: ${song}\nARTIST: ${artist}\nALBUM: ${album}\nYEAR: ${year}\n\nLYRICS:\n--------------------------\n${lyrics}`;
+            const folderName = `${artist} - ${song}`.replace(/[/\\?%*:|"<>]/g, '-'); 
+            zip.file(`${folderName}/lyrics.txt`, content);
+            const zipBlob = await zip.generateAsync({type: "blob"});
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(zipBlob);
+            link.download = `${folderName}.zip`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        } catch (err) {
+            console.error("Zip generation failed", err);
+        }
+    };
+
+    function seededRandom(seed) {
+        const x = Math.sin(seed) * 10000;
+        return x - Math.floor(x);
+    }
+
+    const MusicEngine = {
+        init: async function() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioCtx.state === 'suspended') await audioCtx.resume();
+        },
+
+        playDrum: function(drumType, time, vol, genreId) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            
+            // Set to 75% of original (0.75 * original)
+            let adjustedVol = vol * 0.75; 
+
+            if (drumType === 'kick') {
+                switch(genreId) {
+                    case 0: osc.frequency.setValueAtTime(120, time); osc.frequency.exponentialRampToValueAtTime(40, time + 0.1); break;
+                    case 1: osc.type = 'triangle'; osc.frequency.setValueAtTime(80, time); osc.frequency.linearRampToValueAtTime(30, time + 0.15); break;
+                    case 2: osc.type = 'sawtooth'; osc.frequency.setValueAtTime(55, time); osc.frequency.exponentialRampToValueAtTime(20, time + 0.4); adjustedVol *= 1.2; break;
+                    case 3: osc.frequency.setValueAtTime(40, time); break;
+                }
+            } else {
+                switch(genreId) {
+                    case 0: osc.type = 'square'; osc.frequency.setValueAtTime(2500, time); break;
+                    case 1: osc.type = 'triangle'; osc.frequency.setValueAtTime(600, time); break;
+                    case 2: osc.type = 'sawtooth'; osc.frequency.setValueAtTime(7000, time); break;
+                    case 3: osc.type = 'sine'; osc.frequency.setValueAtTime(1200, time); break;
+                }
             }
 
-            stopPlayback();
-            window.activeSongId = id;
-            btn.classList.replace('bi-play-circle-fill', 'bi-stop-circle-fill');
-            btn.classList.add('stop-active');
+            g.gain.setValueAtTime(adjustedVol, time);
+            const decay = (genreId === 2 && drumType === 'kick') ? 0.6 : 0.1;
+            g.gain.exponentialRampToValueAtTime(0.0001, time + decay);
+            osc.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start(time);
+            osc.stop(time + decay + 0.1);
+        },
 
-            const text = document.getElementById(`lyric-${id}`).value;
-            const bar = document.getElementById(`seek-${id}`);
+        playMelody: function(seed, step, type, now, tempo) {
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            const filter = audioCtx.createBiquadFilter();
             
-            const utter = new SpeechSynthesisUtterance(text);
-            
+            const scale = [1, 1.25, 1.5, 1.87, 2];
+            const noteIndex = Math.floor(seededRandom(seed + Math.floor(step/4)) * scale.length);
+            const freq = (60 + (seed % 40)) * scale[noteIndex];
+            osc.frequency.setValueAtTime(freq, now);
+
+            // Melody adjusted to 75% of original values
+            switch(type) {
+                case 0: osc.type = 'square'; g.gain.setValueAtTime(0.045, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.08); break;
+                case 1: osc.type = 'triangle'; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.06, now + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, now + tempo * 1.5); break;
+                case 2: osc.type = 'sawtooth'; filter.type = 'lowpass'; filter.frequency.setValueAtTime(300, now); filter.frequency.exponentialRampToValueAtTime(3000, now + 0.1); g.gain.setValueAtTime(0.06, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.4); break;
+                case 3: osc.type = 'sine'; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.03, now + 0.2); g.gain.exponentialRampToValueAtTime(0.0001, now + 2.0); break;
+            }
+
+            osc.connect(filter);
+            filter.connect(g);
+            g.connect(audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 2.1);
+        },
+
+        start: async function(songId) {
+            await this.init();
+            this.stop();
+            isPlayingMusic = true;
+            const seed = parseInt(songId) || 0;
+            const type = seed % 4;
+            const genres = [
+                { t: 0.15, k: [1,0,0,0], s: [0,0,1,0] },
+                { t: 0.30, k: [1,0,0],   s: [0,1,1] },
+                { t: 0.12, k: [1,0,1,0], s: [0,0,0,1] },
+                { t: 0.50, k: [1,0,0,0], s: [0,0,0,0] }
+            ];
+            const cfg = genres[type];
+            let step = 0;
+            const loop = () => {
+                if (!isPlayingMusic) return;
+                const now = audioCtx.currentTime;
+                if (cfg.k[step % cfg.k.length]) this.playDrum('kick', now, 0.6, type);
+                if (cfg.s[step % cfg.s.length]) this.playDrum('snare', now, 0.3, type);
+                this.playMelody(seed, step, type, now, cfg.t);
+                step++;
+                setTimeout(loop, cfg.t * 1000);
+            };
+            loop();
+        },
+        stop: function() { isPlayingMusic = false; }
+    };
+
+    const playHandler = (e) => {
+        const btn = e.target.closest('.play-trigger');
+        if (!btn) return;
+        const id = btn.getAttribute('data-song-id');
+        if (window.activeSongId === id && synth.speaking) { stopPlayback(); return; }
+
+        stopPlayback();
+        window.activeSongId = id;
+        btn.classList.replace('bi-play-circle-fill', 'bi-stop-circle-fill');
+
+        const fullText = document.getElementById(`lyric-${id}`).value;
+        const lines = fullText.split('\n').filter(l => l.trim() !== "");
+        MusicEngine.start(id);
+
+        let currentLine = 0;
+        const singNextLine = () => {
+            if (!window.activeSongId || currentLine >= lines.length) {
+                if (currentLine >= lines.length) stopPlayback();
+                return;
+            }
+            const utter = new SpeechSynthesisUtterance(lines[currentLine]);
+            utter.pitch = 0.8 + (seededRandom(currentLine) * 0.6);
+            utter.rate = 0.9;
             const langEl = document.getElementById('langSelect');
             if(langEl) utter.lang = langEl.value;
-
-            utter.onboundary = (ev) => {
-                if (ev.name === 'word') {
-                    bar.style.width = ((ev.charIndex / text.length) * 100) + '%';
-                }
+            utter.onend = () => {
+                currentLine++;
+                const pause = 200 + (seededRandom(currentLine) * 300);
+                setTimeout(singNextLine, pause);
             };
-            utter.onend = () => { stopPlayback(); };
+            const seekEl = document.getElementById(`seek-${id}`);
+            if(seekEl) seekEl.style.width = ((currentLine / lines.length) * 100) + '%';
             synth.speak(utter);
         };
+        singNextLine();
+    };
 
-        function stopPlayback() {
-            synth.cancel();
-            window.activeSongId = null;
-            document.querySelectorAll('.play-trigger').forEach(b => {
-                b.classList.replace('bi-stop-circle-fill', 'bi-play-circle-fill');
-                b.classList.remove('stop-active');
-            });
-            document.querySelectorAll('.progress-bar').forEach(p => p.style.width = '0%');
-        }
-
-        document.removeEventListener('click', playHandler);
-        document.addEventListener('click', playHandler);
-    })();
-
-    function downloadAsText(song, artist, album, year, lyrics) {
-        const content = `SONG: ${song}\nARTIST: ${artist}\nALBUM: ${album}\nYEAR: ${year}\n\nLYRICS:\n${lyrics}`;
-        const blob = new Blob([content], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${song.replace(/\s+/g, '_')}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+    function stopPlayback() {
+        synth.cancel();
+        MusicEngine.stop();
+        window.activeSongId = null;
+        document.querySelectorAll('.play-trigger').forEach(b => {
+            b.classList.replace('bi-stop-circle-fill', 'bi-play-circle-fill');
+        });
     }
+
+    document.addEventListener('click', playHandler);
+})();
 </script>
