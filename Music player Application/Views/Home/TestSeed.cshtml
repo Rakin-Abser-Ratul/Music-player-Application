@@ -1,0 +1,170 @@
+﻿@model IEnumerable<Music_player_Application.Models.MusicProperties>
+
+<div class="container mt-4">
+    <div class="table-responsive shadow-sm rounded">
+        <table class="table table-hover align-middle bg-white mb-0">
+            <thead class="table-light text-uppercase small fw-bold">
+                <tr>
+                    <th style="width: 5%">#</th>
+                    <th style="width: 25%">Song</th>
+                    <th style="width: 20%">Artist</th>
+                    <th style="width: 20%">Album</th>
+                    <th style="width: 15%">Genre</th>
+                    <th style="width: 15%">Likes</th>
+                </tr>
+            </thead>
+            <tbody>
+                @{
+                    int rowNum = 1;
+                }
+                @foreach (var item in Model)
+                {
+                    <tr style="cursor: pointer;" data-bs-toggle="collapse" data-bs-target="#details-@item.SongId">
+                        <td class="text-secondary fw-bold">@rowNum</td>
+                        <td><strong>@item.song</strong></td>
+                        <td>@item.Artist</td>
+                        <td>@item.Album</td>
+                        <td><span class="badge bg-light text-dark border">@item.Genre</span></td>
+                        <td><span class="text-primary fw-bold"><i class="bi bi-hand-thumbs-up-fill"></i> @item.Likes</span></td>
+                    </tr>
+
+                    <tr class="collapse shadow-sm" id="details-@item.SongId">
+                        <td colspan="6" class="p-0 border-0 bg-light">
+                            <div class="card border-0 m-3 shadow-sm bg-white">
+                                <div class="card-body">
+                                    <div class="row align-items-start">
+
+                                        <div class="col-md-3 border-end">
+                                            <div class="d-flex flex-column align-items-center">
+                                                <img src="@item.PictureUrl" class="img-fluid rounded shadow-sm mb-3"
+                                                     style="width: 200px; height: 200px; object-fit: cover;" alt="Album Art" />
+
+                                                <button class="btn btn-primary rounded-pill px-4 py-2 shadow-sm mb-2" onclick="event.stopPropagation()">
+                                                    <i class="bi bi-hand-thumbs-up-fill me-2"></i> @item.Likes
+                                                </button>
+                                                <small class="text-muted">Track ID: @item.SongId.Split('-').Last()</small>
+                                            </div>
+                                        </div>
+
+                                        <div class="col-md-9 px-4">
+                                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                                <div>
+                                                    <h3 class="mb-0">@item.song</h3>
+                                                    <p class="text-muted mb-0">by <strong>@item.Artist</strong> | @item.Album</p>
+                                                </div>
+                                                <span class="badge bg-dark rounded-pill">@item.duration</span>
+                                            </div>
+
+                                            <div class="player-bar d-flex align-items-center gap-3 bg-light p-3 rounded-3 mb-4">
+                                                <i class="bi bi-play-circle-fill text-primary display-6" id="play-@item.SongId"
+                                                   style="cursor:pointer" onclick="handlePlayback('@item.SongId')"></i>
+
+                                                <div class="flex-grow-1">
+                                                    <input type="range" class="form-range custom-slider" id="seek-@item.SongId"
+                                                           value="0" min="0" max="100" onchange="manualSeek('@item.SongId', this.value)">
+                                                </div>
+                                            </div>
+
+                                            <input type="hidden" id="lyrics-@item.SongId" value="@item.Lyrics" />
+
+                                            <div class="lyrics-container">
+                                                <h6 class="text-uppercase small fw-bold text-primary">Lyrics</h6>
+                                                <pre class="p-3 bg-white border rounded"
+                                                     style="white-space: pre-wrap; font-family: Georgia, serif; font-style: italic; color: #444; height: 120px; overflow-y: auto;">@item.Lyrics</pre>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    rowNum++;
+                }
+            </tbody>
+        </table>
+    </div>
+</div>
+
+@section Scripts {
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <style>
+        .custom-slider {
+            height: 8px;
+            cursor: pointer;
+        }
+            /* Prevent browser freeze by disabling transitions during slider updates */
+            .custom-slider:active {
+                transition: none;
+            }
+
+        .player-bar i:hover {
+            transform: scale(1.1);
+            color: #0056b3 !important;
+        }
+    </style>
+
+    <script>
+        let currentActiveSong = null;
+
+        function handlePlayback(songId) {
+            // 1. Prevent freeze: if already playing this song, stop it.
+            if (currentActiveSong === songId && window.speechSynthesis.speaking) {
+                stopPlayback();
+                return;
+            }
+
+            // 2. Stop any existing voice before starting new one
+            stopPlayback();
+            currentActiveSong = songId;
+
+            const text = document.getElementById(`lyrics-${songId}`).value;
+            const slider = document.getElementById(`seek-${songId}`);
+            const btn = document.getElementById(`play-${songId}`);
+
+            // Calculate start point
+            const startChar = Math.floor((slider.value / 100) * text.length);
+            const utterance = new SpeechSynthesisUtterance(text.substring(startChar));
+            utterance.rate = 0.9;
+
+            utterance.onboundary = (event) => {
+                if (event.name === 'word') {
+                    // requestAnimationFrame ensures smooth UI without freezing the screen
+                    window.requestAnimationFrame(() => {
+                        const progress = ((startChar + event.charIndex) / text.length) * 100;
+                        slider.value = progress;
+                    });
+                }
+            };
+
+            utterance.onstart = () => {
+                btn.classList.replace('bi-play-circle-fill', 'bi-stop-circle-fill');
+                btn.classList.add('text-danger');
+            };
+
+            utterance.onend = () => {
+                slider.value = 100;
+                stopPlayback();
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function stopPlayback() {
+            window.speechSynthesis.cancel();
+            if (currentActiveSong) {
+                const btn = document.getElementById(`play-${currentActiveSong}`);
+                if (btn) {
+                    btn.classList.replace('bi-stop-circle-fill', 'bi-play-circle-fill');
+                    btn.classList.remove('text-danger');
+                }
+            }
+        }
+
+        function manualSeek(songId, val) {
+            if (currentActiveSong === songId) {
+                handlePlayback(songId); // Restart from new position
+            }
+        }
+    </script>
+}

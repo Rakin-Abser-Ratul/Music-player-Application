@@ -1,0 +1,276 @@
+﻿@model IEnumerable<Music_player_Application.Models.MusicProperties>
+@{
+    // 1. Context & State Detection
+    bool isAjax = Context.Request.Headers["X-Requested-With"] == "XMLHttpRequest";
+    if (isAjax) { Layout = null; }
+
+    var viewType = ViewBag.ViewType ?? Context.Request.Query["viewType"].ToString() ?? "table";
+    var currentLang = Context.Request.Query["lang"].ToString() ?? "en-US";
+    var currentSeed = Context.Request.Query["incomingSeed"].ToString() ?? "58933423";
+    int currentPage = int.TryParse(Context.Request.Query["page"], out var p) ? p : 1;
+    bool isUk = currentLang.StartsWith("uk");
+
+    // 2. Localization
+    string hSong = isUk ? "Пісня" : "Song";
+    string hArtist = isUk ? "Виконавець" : "Artist";
+    string hAlbum = isUk ? "Альбом" : "Album";
+    string hGenre = isUk ? "Жанр" : "Genre";
+    string lblLyrics = isUk ? "Текст пісні" : "Lyrics";
+    string lblFrom = isUk ? "з" : "from";
+    string lblBy = isUk ? "від" : "by";
+    string lblPrev = isUk ? "Назад" : "Previous";
+    string lblNext = isUk ? "Далі" : "Next";
+    string lblDownload = isUk ? "Зберегти" : "Save";
+
+    int itemIndex = ((currentPage - 1) * 15) + 1;
+}
+
+<style>
+    /* Table Styling */
+    .chevron-icon { transition: transform 0.3s ease; }
+    tr:not(.collapsed) .chevron-icon { transform: rotate(180deg); }
+
+    .lyrics-tab {
+        border: 1px solid #dee2e6;
+        border-bottom: none;
+        display: inline-block;
+        padding: 6px 16px;
+        border-radius: 6px 6px 0 0;
+        background: #fff;
+        font-weight: 600;
+        font-size: 0.85rem;
+        position: relative;
+        top: 1px;
+    }
+
+    .stop-active { color: #dc3545 !important; }
+
+    /* Gallery Grid */
+    .full-width-music-grid {
+        display: flex;
+        flex-wrap: wrap;
+        margin: 0 -10px;
+        width: 100%;
+    }
+
+    .music-item {
+        flex: 0 0 33.333%;
+        padding: 10px;
+    }
+
+    .music-card:hover .play-btn-overlay { opacity: 1 !important; }
+
+    /* Pagination Styling */
+    .pagination .page-link { cursor: pointer; color: #0d6efd; background: #fff; }
+    .pagination .page-item.active .page-link {
+        background-color: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+
+    @@media (max-width: 992px) { .music-item { flex: 0 0 50%; } }
+    @@media (max-width: 576px) { .music-item { flex: 0 0 100%; } }
+</style>
+
+@if (viewType == "gallery")
+{
+    if (!isAjax || currentPage == 1)
+    {
+        @:<div class="full-width-music-grid">
+    }
+
+    @foreach (var item in Model)
+    {
+        <div class="music-item">
+            <div class="card h-100 border-0 shadow-sm music-card overflow-hidden">
+                <div class="position-relative" style="height: 250px; background: #000;">
+                    <img src="@item.PictureUrl" class="w-100 h-100" style="object-fit: cover; opacity: 0.8;">
+                    <div class="card-img-overlay d-flex flex-column align-items-center justify-content-center opacity-0 play-btn-overlay" style="background: rgba(0,0,0,0.4); transition: 0.3s;">
+                        <i class="bi bi-play-circle-fill text-white display-3 play-trigger" style="cursor:pointer" data-song-id="@item.SongId"></i>
+                        <div class="progress mt-3 w-75" style="height: 6px;">
+                            <div class="progress-bar bg-primary" id="seek-@item.SongId" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <h6 class="fw-bold mb-1 text-truncate">@item.song</h6>
+                    <p class="text-muted small mb-0 text-truncate">@item.Artist • @item.Year</p>
+                    <input type="hidden" id="lyric-@item.SongId" value="@item.Lyrics" />
+                </div>
+            </div>
+        </div>
+    }
+
+    if (!isAjax || currentPage == 1)
+    {
+        @:</div>
+    }
+}
+else
+{
+    <div class="bg-white shadow-sm border rounded overflow-hidden">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:40px"></th>
+                    <th style="width:60px">#</th>
+                    <th>@hSong</th>
+                    <th>@hArtist</th>
+                    <th>@hAlbum</th>
+                    <th>@hGenre</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in Model)
+                {
+                    <tr data-bs-toggle="collapse" data-bs-target="#details-@item.SongId" class="collapsed" style="cursor:pointer">
+                        <td><i class="bi bi-chevron-down small text-muted chevron-icon"></i></td>
+                        <td class="fw-bold text-primary">@(itemIndex++)</td>
+                        <td class="fw-bold">@item.song</td>
+                        <td>@item.Artist</td>
+                        <td class="text-muted">@item.Album</td>
+                        <td><span class="badge bg-light text-dark border">@item.Genre</span></td>
+                    </tr>
+                    <tr class="collapse" id="details-@item.SongId">
+                        <td colspan="6" class="p-0">
+                            <div class="p-4 bg-light border-top">
+                                <div class="d-flex gap-4">
+                                    <div class="text-center" style="min-width: 150px;">
+                                        <img src="@item.PictureUrl" class="rounded shadow mb-3" style="width:150px; height:150px; object-fit:cover;">
+                                        <div class="badge rounded-pill bg-primary w-100 py-2 mb-2">
+                                            <i class="bi bi-hand-thumbs-up-fill me-1"></i> @item.Likes
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div>
+                                                <h3 class="fw-bold mb-0">@item.song</h3>
+                                                <p class="text-muted">@lblFrom <strong>@item.Album</strong> @lblBy <strong>@item.Artist</strong></p>
+                                                <p class="text-muted small mt-n2">@item.record, @item.Year</p>
+                                            </div>
+                                            <span class="badge bg-dark rounded-pill px-3 py-2">@item.duration</span>
+                                        </div>
+
+                                        @* --- ACTION BAR WITH UPDATED SAVE BUTTON --- *@
+                                        <div class="bg-white p-3 rounded border my-3 d-flex align-items-center gap-3 shadow-sm">
+                                            <i class="bi bi-play-circle-fill text-primary display-6 play-trigger" style="cursor:pointer" data-song-id="@item.SongId"></i>
+                                            <div class="progress flex-grow-1" style="height: 10px;">
+                                                <div class="progress-bar progress-bar-striped progress-bar-animated" id="seek-@item.SongId" style="width: 0%"></div>
+                                            </div>
+                                            <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-2" 
+                                                    onclick="downloadAsText('@item.song.Replace("'", "\\'")', '@item.Artist.Replace("'", "\\'")', '@item.Album.Replace("'", "\\'")', '@item.Year', document.getElementById('lyric-@item.SongId').value)">
+                                                <i class="bi bi-download"></i> @lblDownload
+                                            </button>
+                                        </div>
+
+                                        <div class="lyrics-tab">@lblLyrics</div>
+                                        <div class="p-3 bg-white border rounded shadow-sm" style="white-space: pre-wrap; font-size: 0.9rem;">
+                                            <input type="hidden" id="lyric-@item.SongId" value="@item.Lyrics" />
+                                            @item.Lyrics
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <nav class="mt-5 mb-5">
+        <ul class="pagination justify-content-center shadow-sm" style="border-radius: 50px; overflow: hidden;">
+            @{
+                int maxPagesToShow = 5;
+                int startPage = Math.Max(1, currentPage - 2);
+                int endPage = startPage + maxPagesToShow - 1;
+            }
+
+            <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                <button class="page-link border-0 px-3" onclick="changePage(@(currentPage - 1))" type="button">
+                    <i class="bi bi-chevron-left"></i> @lblPrev
+                </button>
+            </li>
+
+            @for (int i = startPage; i <= endPage; i++)
+            {
+                var pageNum = i;
+                <li class="page-item @(currentPage == pageNum ? "active" : "")">
+                    <button class="page-link border-0 px-3" onclick="changePage(@pageNum)" type="button">
+                        @pageNum
+                    </button>
+                </li>
+            }
+
+            <li class="page-item">
+                <button class="page-link border-0 px-3" onclick="changePage(@(currentPage + 1))" type="button">
+                    @lblNext <i class="bi bi-chevron-right"></i>
+                </button>
+            </li>
+        </ul>
+    </nav>
+}
+
+<script>
+    (function() {
+        const synth = window.speechSynthesis;
+        
+        const playHandler = (e) => {
+            const btn = e.target.closest('.play-trigger');
+            if (!btn) return;
+            const id = btn.getAttribute('data-song-id');
+
+            if (window.activeSongId === id && synth.speaking) {
+                stopPlayback();
+                return;
+            }
+
+            stopPlayback();
+            window.activeSongId = id;
+            btn.classList.replace('bi-play-circle-fill', 'bi-stop-circle-fill');
+            btn.classList.add('stop-active');
+
+            const text = document.getElementById(`lyric-${id}`).value;
+            const bar = document.getElementById(`seek-${id}`);
+            
+            const utter = new SpeechSynthesisUtterance(text);
+            
+            const langEl = document.getElementById('langSelect');
+            if(langEl) utter.lang = langEl.value;
+
+            utter.onboundary = (ev) => {
+                if (ev.name === 'word') {
+                    bar.style.width = ((ev.charIndex / text.length) * 100) + '%';
+                }
+            };
+            utter.onend = () => { stopPlayback(); };
+            synth.speak(utter);
+        };
+
+        function stopPlayback() {
+            synth.cancel();
+            window.activeSongId = null;
+            document.querySelectorAll('.play-trigger').forEach(b => {
+                b.classList.replace('bi-stop-circle-fill', 'bi-play-circle-fill');
+                b.classList.remove('stop-active');
+            });
+            document.querySelectorAll('.progress-bar').forEach(p => p.style.width = '0%');
+        }
+
+        document.removeEventListener('click', playHandler);
+        document.addEventListener('click', playHandler);
+    })();
+
+    function downloadAsText(song, artist, album, year, lyrics) {
+        const content = `SONG: ${song}\nARTIST: ${artist}\nALBUM: ${album}\nYEAR: ${year}\n\nLYRICS:\n${lyrics}`;
+        const blob = new Blob([content], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${song.replace(/\s+/g, '_')}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
+</script>

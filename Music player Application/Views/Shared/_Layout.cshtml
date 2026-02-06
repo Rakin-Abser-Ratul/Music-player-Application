@@ -1,0 +1,256 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Music Generator SPA</title>
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <style>
+        :root {
+            --app-blue: #0d6efd;
+            --bg-light: #f8f9fa;
+        }
+
+        body {
+            background-color: var(--bg-light);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #121212;
+            overflow-x: hidden;
+        }
+
+        /* Sticky Toolbar */
+        .spa-toolbar {
+            background: rgba(255, 255, 255, 0.98);
+            padding: 12px 0;
+            border-bottom: 1px solid #dee2e6;
+            position: sticky;
+            top: 0;
+            z-index: 1020;
+        }
+
+        .input-group-text {
+            background: transparent;
+            border: none;
+            color: #6c757d;
+            font-size: 0.7rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .main-content {
+            padding-top: 20px;
+            min-height: 80vh;
+        }
+
+        /* Simplified Loading States (No Keyframes) */
+        #loader {
+            display: none;
+        }
+
+        #infinite-loader {
+            display: none;
+            padding: 30px;
+            text-align: center;
+            width: 100%;
+        }
+
+        .loading-active {
+            opacity: 0.4;
+            pointer-events: none;
+            transition: opacity 0.3s ease; /* Simple transition instead of keyframes */
+        }
+
+        .text-blue {
+            color: var(--app-blue);
+        }
+    </style>
+</head>
+<body>
+    <header class="spa-toolbar mb-3 shadow-sm">
+        <div class="container-fluid px-4">
+            <div class="row align-items-center">
+                <div class="col-md-2">
+                    <label id="lbl-lang" class="input-group-text p-0 mb-1">Language</label>
+                    <select id="langSelect" class="form-select form-select-sm border-0 shadow-sm" onchange="resetAndUpdate()">
+                        <option value="en-US">English (US)</option>
+                        <option value="uk-UA">Ukrainian</option>
+                    </select>
+                </div>
+
+                <div class="col-md-2">
+                    <label id="lbl-seed" class="input-group-text p-0 mb-1">
+                        Seed <div id="loader" class="spinner-border spinner-border-sm text-primary ms-2"></div>
+                    </label>
+                    <div class="input-group input-group-sm shadow-sm">
+                        <input type="text" id="seedInput" class="form-control border-0" value="58933423" oninput="resetAndUpdate()">
+                        <button class="btn btn-white border-0" type="button" onclick="shuffleSeed()">
+                            <i class="bi bi-shuffle text-muted"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="col-md-5">
+                    <div class="d-flex justify-content-between">
+                        <label id="lbl-likes" class="input-group-text p-0 mb-1">Likes Threshold</label>
+                        <span id="likesDisplay" class="small fw-bold text-blue">5.0</span>
+                    </div>
+                    <input type="range" class="form-range" id="likesSlider" min="0" max="10" step="0.1" value="5.0">
+                </div>
+
+                <div class="col-md-3 text-end">
+                    <div class="btn-group btn-group-sm shadow-sm">
+                        <button id="view-table" class="btn btn-primary" onclick="toggleView('table')">
+                            <i class="bi bi-grid-3x3-gap"></i>
+                        </button>
+                        <button id="view-gallery" class="btn btn-white border border-start-0" onclick="toggleView('gallery')">
+                            <i class="bi bi-view-list"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container-fluid px-4 main-content">
+        <main role="main" id="music-render-area">
+            @RenderBody()
+        </main>
+
+        <div id="infinite-loader">
+            <div class="spinner-border text-primary spinner-border-sm" role="status"></div>
+            <span id="lbl-loading" class="ms-2 text-muted small fw-bold">Loading...</span>
+        </div>
+
+        <div id="scroll-sentinel" style="height: 20px; width: 100%;"></div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        let activeView = 'table';
+        let currentPage = 1;
+        let isFetching = false;
+
+        // --- NEW: Pagination Handler for Table View ---
+        function changePage(pageNumber) {
+            if (pageNumber < 1 || isFetching) return;
+            currentPage = pageNumber;
+            // We pass 'false' to updateMusicList because pagination
+            // should replace the content, not append it.
+            updateMusicList(false);
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function updateUIVocabulary() {
+            const isUk = document.getElementById('langSelect').value.startsWith('uk');
+            document.getElementById('lbl-lang').innerText = isUk ? "Мова" : "Language";
+            document.getElementById('lbl-seed').firstChild.textContent = isUk ? "Сід " : "Seed ";
+            document.getElementById('lbl-likes').innerText = isUk ? "Поріг лайків" : "Likes Threshold";
+            document.getElementById('lbl-loading').innerText = isUk ? "Завантаження..." : "Loading more tracks...";
+        }
+
+        function toggleView(viewType) {
+            if (activeView === viewType) return;
+            activeView = viewType;
+
+            const gBtn = document.getElementById('view-gallery');
+            const tBtn = document.getElementById('view-table');
+
+            if (viewType === 'table') {
+                tBtn.className = "btn btn-primary";
+                gBtn.className = "btn btn-white border border-start-0";
+            } else {
+                gBtn.className = "btn btn-primary";
+                tBtn.className = "btn btn-white border border-end-0";
+            }
+            resetAndUpdate();
+        }
+
+        function shuffleSeed() {
+            document.getElementById('seedInput').value = Math.floor(Math.random() * 99999999);
+            resetAndUpdate();
+        }
+
+        const slider = document.getElementById('likesSlider');
+        slider.oninput = function() {
+            document.getElementById('likesDisplay').innerText = parseFloat(this.value).toFixed(1);
+        };
+        slider.onchange = function() { resetAndUpdate(); };
+
+        function resetAndUpdate() {
+            currentPage = 1;
+            updateUIVocabulary();
+            updateMusicList(false);
+        }
+
+               async function updateMusicList(append = false) {
+            if (isFetching) return;
+            isFetching = true;
+
+            const target = document.getElementById('music-render-area'),
+                  topLoader = document.getElementById('loader'),
+                  bottomLoader = document.getElementById('infinite-loader');
+
+            if (append) {
+                bottomLoader.style.display = 'block';
+            } else {
+                topLoader.style.display = 'inline-block';
+                target.classList.add('loading-active');
+            }
+
+            try {
+                const s = document.getElementById('seedInput').value;
+                const l = slider.value;
+                const g = document.getElementById('langSelect').value;
+
+                const url = `/Home/Index?incomingSeed=${s}&incomingLikes=${l}&lang=${g}&viewType=${activeView}&page=${currentPage}`;
+
+                const response = await fetch(url, {
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                });
+                const html = await response.text();
+
+                if (append && activeView === 'gallery') {
+                    // Find the grid container inside the render area
+                    const grid = target.querySelector('.full-width-music-grid');
+                    if (grid) {
+                        // We append the HTML (which won't have the wrapper div because currentPage > 1)
+                        grid.insertAdjacentHTML('beforeend', html);
+                    } else {
+                        target.innerHTML = html;
+                    }
+                } else {
+                    // For Table View or a Fresh Search, replace the whole area
+                    target.innerHTML = html;
+                    if (!append) window.scrollTo({top: 0, behavior: 'auto'});
+                }
+            } catch (err) {
+                console.error("Fetch error:", err);
+            } finally {
+                topLoader.style.display = 'none';
+                bottomLoader.style.display = 'none';
+                target.classList.remove('loading-active');
+                isFetching = false;
+            }
+        }
+
+        // Infinite Scroll Observer (Only active for Gallery)
+        const observer = new IntersectionObserver((entries) => {
+            if (entries[0].isIntersecting && !isFetching && activeView === 'gallery') {
+                currentPage++;
+                updateMusicList(true);
+            }
+        }, { rootMargin: '300px' });
+
+        observer.observe(document.getElementById('scroll-sentinel'));
+
+        // Init
+        updateUIVocabulary();
+    </script>
+</body>
+</html>

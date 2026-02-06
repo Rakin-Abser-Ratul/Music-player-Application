@@ -1,0 +1,114 @@
+﻿@model IEnumerable<Music_player_Application.Models.MusicProperties>
+@{
+    // Detect AJAX call from your layout script to disable layout nesting
+    if (Context.Request.Headers["X-Requested-With"] == "XMLHttpRequest")
+    {
+        Layout = null;
+    }
+}
+
+<div class="table-responsive shadow-sm border rounded bg-white">
+    <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+            <tr>
+                <th style="width:5%">#</th>
+                <th style="width:30%">Song</th>
+                <th style="width:25%">Artist</th>
+                <th style="width:20%">Album</th>
+                <th style="width:20%">Genre</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var item in Model)
+            {
+                <tr data-bs-toggle="collapse" data-bs-target="#details-@item.SongId" style="cursor:pointer">
+                    <td><i class="bi bi-chevron-down small"></i></td>
+                    <td class="fw-bold">@item.song</td>
+                    <td>@item.Artist</td>
+                    <td class="text-muted">@item.Album</td>
+                    <td><span class="badge bg-light text-dark border">@item.Genre</span></td>
+                </tr>
+                <tr class="collapse" id="details-@item.SongId">
+                    <td colspan="5" class="bg-light p-4">
+                        <div class="d-flex gap-4">
+                            <div class="text-center" style="width: 160px;">
+                                <img src="@item.PictureUrl" class="rounded shadow mb-2 w-100">
+                                <span class="badge rounded-pill bg-primary w-100 py-2">
+                                    <i class="bi bi-hand-thumbs-up-fill"></i> @item.Likes
+                                </span>
+                            </div>
+                            <div class="flex-grow-1">
+                                <div class="d-flex justify-content-between">
+                                    <h3>@item.song</h3>
+                                    <span class="text-muted fw-bold">@item.duration</span>
+                                </div>
+                                <div class="bg-white p-3 rounded border my-3 d-flex align-items-center gap-3">
+                                    <i class="bi bi-play-circle-fill text-primary display-6 play-trigger"
+                                       style="cursor:pointer" data-song-id="@item.SongId"></i>
+                                    <input type="range" class="form-range" id="seek-@item.SongId" value="0">
+                                </div>
+                                <input type="hidden" id="lyric-@item.SongId" value="@item.Lyrics" />
+                                <div class="p-3 bg-white border rounded small">@item.Lyrics</div>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // Self-executing to avoid global scope pollution
+    (function() {
+        let activeId = null;
+
+        // Use event delegation so it works after table refreshes
+        document.removeEventListener('click', musicHandler);
+        document.addEventListener('click', musicHandler);
+
+        function musicHandler(e) {
+            const btn = e.target.closest('.play-trigger');
+            if (!btn) return;
+
+            const id = btn.getAttribute('data-song-id');
+
+            // If already playing this specific song -> STOP
+            if (activeId === id && window.speechSynthesis.speaking) {
+                stopMusic();
+                return;
+            }
+
+            stopMusic(); // Stop any other song playing
+            activeId = id;
+
+            // Toggle UI to Red Stop
+            btn.classList.replace('bi-play-circle-fill', 'bi-stop-circle-fill');
+            btn.style.color = "#dc3545"; // Red color
+
+            const lyric = document.getElementById(`lyric-${id}`).value;
+            const slider = document.getElementById(`seek-${id}`);
+            const utter = new SpeechSynthesisUtterance(lyric);
+
+            utter.onboundary = (ev) => {
+                if (ev.name === 'word') slider.value = (ev.charIndex / lyric.length) * 100;
+            };
+
+            utter.onend = () => {
+                slider.value = 100;
+                stopMusic();
+            };
+
+            window.speechSynthesis.speak(utter);
+        }
+
+        function stopMusic() {
+            window.speechSynthesis.cancel();
+            activeId = null;
+            document.querySelectorAll('.play-trigger').forEach(b => {
+                b.classList.replace('bi-stop-circle-fill', 'bi-play-circle-fill');
+                b.style.color = ""; // Reset to original blue
+            });
+        }
+    })();
+</script>
