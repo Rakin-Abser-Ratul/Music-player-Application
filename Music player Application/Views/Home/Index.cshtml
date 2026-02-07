@@ -8,16 +8,17 @@
     int currentPage = int.TryParse(Context.Request.Query["page"], out var p) ? p : 1;
     bool isUk = currentLang.StartsWith("uk");
 
-    string hSong = isUk ? "Пісня" : "Song";
-    string hArtist = isUk ? "Виконавець" : "Artist";
-    string hAlbum = isUk ? "Альбом" : "Album";
-    string hGenre = isUk ? "Жанр" : "Genre";
-    string lblLyrics = isUk ? "Текст пісні" : "Lyrics";
-    string lblFrom = isUk ? "з" : "from";
-    string lblBy = isUk ? "від" : "by";
-    string lblPrev = isUk ? "Назад" : "Previous";
-    string lblNext = isUk ? "Далі" : "Next";
-    string lblDownload = isUk ? "Зберегти" : "Save";
+   // Hard-coded Latin labels for Ukrainian
+    string hSong = isUk ? "Pisnya" : "Song";
+    string hArtist = isUk ? "Vykonavets" : "Artist";
+    string hAlbum = isUk ? "Albom" : "Album";
+    string hGenre = isUk ? "Zhanr" : "Genre";
+    string lblLyrics = isUk ? "Tekst pisni" : "Lyrics";
+    string lblFrom = isUk ? "z" : "from";
+    string lblBy = isUk ? "vid" : "by";
+    string lblPrev = isUk ? "Nazad" : "Previous";
+    string lblNext = isUk ? "Dali" : "Next";
+    string lblDownload = isUk ? "Zberety" : "Save";
 
     int itemIndex = ((currentPage - 1) * 15) + 1;
 }
@@ -116,15 +117,8 @@ else
                                             <div class="progress flex-grow-1" style="height: 10px;">
                                                 <div class="progress-bar progress-bar-striped progress-bar-animated" id="seek-@item.SongId" style="width: 0%"></div>
                                             </div>
-                                            <button type="button" class="btn btn-outline-primary btn-sm d-flex align-items-center gap-2" 
-                                                    onclick="downloadAsZip(
-                                                        '@Html.Raw(System.Web.HttpUtility.JavaScriptStringEncode(item.song))', 
-                                                        '@Html.Raw(System.Web.HttpUtility.JavaScriptStringEncode(item.Artist))', 
-                                                        '@Html.Raw(System.Web.HttpUtility.JavaScriptStringEncode(item.Album))', 
-                                                        '@item.Year', 
-                                                        document.getElementById('lyric-@item.SongId').value)">
-                                                <i class="bi bi-floppy"></i> @lblDownload
-                                            </button>
+                                           
+                                            
                                         </div>
 
                                         <div class="lyrics-tab">@lblLyrics</div>
@@ -169,175 +163,253 @@ else
         </ul>
     </nav>
 }
-
 <script>
-(function() {
+(function () {
     const synth = window.speechSynthesis;
-    let audioCtx = null;
-    let isPlayingMusic = false;
 
-    window.downloadAsZip = async function(song, artist, album, year, lyrics) {
-        try {
-            const zip = new JSZip();
-            const content = `SONG: ${song}\nARTIST: ${artist}\nALBUM: ${album}\nYEAR: ${year}\n\nLYRICS:\n--------------------------\n${lyrics}`;
-            const folderName = `${artist} - ${song}`.replace(/[/\\?%*:|"<>]/g, '-'); 
-            zip.file(`${folderName}/lyrics.txt`, content);
-            const zipBlob = await zip.generateAsync({type: "blob"});
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(zipBlob);
-            link.download = `${folderName}.zip`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        } catch (err) {
-            console.error("Zip generation failed", err);
+    // --- CHROME FIX: Improved Voice Loading ---
+    let voices = [];
+    const loadVoices = () => {
+        voices = synth.getVoices();
+        // If voices are empty (common in Chrome), try again in 100ms
+        if (voices.length === 0) {
+            setTimeout(loadVoices, 100);
         }
     };
 
-    function seededRandom(seed) {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
+    // Initialize voices immediately and on change
+    loadVoices();
+    if (synth.onvoiceschanged !== undefined) {
+        synth.onvoiceschanged = loadVoices;
     }
 
+    function getUkrainianVoice() {
+        // Filter specifically for Ukrainian
+        return voices.find(v => v.lang.startsWith('uk') || v.lang.includes('Ukrainian'));
+    }
+
+    // ---------------- SEED UTILS ----------------
+    function stringToSeed(str) {
+        let h = 2166136261;
+        for (let i = 0; i < str.length; i++) {
+            h ^= str.charCodeAt(i);
+            h = Math.imul(h, 16777619);
+        }
+        return h >>> 0;
+    }
+
+    function hash32(seed) {
+        let h = seed | 0;
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        return (h ^= h >>> 16) >>> 0;
+    }
+
+    function rnd(seed) {
+        return hash32(seed) / 4294967296;
+    }
+
+    // ---------------- MUSIC ENGINE ----------------
     const MusicEngine = {
-        init: async function() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (audioCtx.state === 'suspended') await audioCtx.resume();
+        synths: {},
+        samplers: {},
+        parts: [],
+        melodyPattern: [],
+        drumPattern: [],
+        chordPattern: [],
+
+        async init() {
+            await Tone.start();
+            if (this.synths.piano) return;
+
+            this.reverb = new Tone.Reverb({ decay: 3, wet: 0.35 }).toDestination();
+
+            this.synths.piano = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.03, release: 1.2 }
+            }).connect(this.reverb);
+
+            this.synths.guitar = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "sawtooth" },
+                envelope: { attack: 0.01, decay: 0.15, sustain: 0, release: 0.2 }
+            }).connect(this.reverb);
+
+            this.samplers.kick = new Tone.Sampler({
+                urls: { "C2": "https://tonejs.github.io/audio/808/kick.mp3" }
+            }).toDestination();
         },
 
-        playDrum: function(drumType, time, vol, genreId) {
-            const osc = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            
-            // Set to 75% of original (0.75 * original)
-            let adjustedVol = vol * 0.75; 
+        generatePatterns(seed, scale) {
+            this.melodyPattern = Array.from({ length: 16 }, (_, i) => ({
+                play: rnd(seed + i * 11) > 0.25,
+                deg: Math.floor(rnd(seed + i * 17) * scale.length),
+                oct: 3 + Math.floor(rnd(seed + i * 23) * 3),
+                vel: rnd(seed + i * 29)
+            }));
 
-            if (drumType === 'kick') {
-                switch(genreId) {
-                    case 0: osc.frequency.setValueAtTime(120, time); osc.frequency.exponentialRampToValueAtTime(40, time + 0.1); break;
-                    case 1: osc.type = 'triangle'; osc.frequency.setValueAtTime(80, time); osc.frequency.linearRampToValueAtTime(30, time + 0.15); break;
-                    case 2: osc.type = 'sawtooth'; osc.frequency.setValueAtTime(55, time); osc.frequency.exponentialRampToValueAtTime(20, time + 0.4); adjustedVol *= 1.2; break;
-                    case 3: osc.frequency.setValueAtTime(40, time); break;
-                }
-            } else {
-                switch(genreId) {
-                    case 0: osc.type = 'square'; osc.frequency.setValueAtTime(2500, time); break;
-                    case 1: osc.type = 'triangle'; osc.frequency.setValueAtTime(600, time); break;
-                    case 2: osc.type = 'sawtooth'; osc.frequency.setValueAtTime(7000, time); break;
-                    case 3: osc.type = 'sine'; osc.frequency.setValueAtTime(1200, time); break;
-                }
-            }
+            this.drumPattern = Array.from({ length: 16 }, (_, i) => ({
+                hit: rnd(seed + i * 41) > 0.5,
+                vel: rnd(seed + i * 43)
+            }));
 
-            g.gain.setValueAtTime(adjustedVol, time);
-            const decay = (genreId === 2 && drumType === 'kick') ? 0.6 : 0.1;
-            g.gain.exponentialRampToValueAtTime(0.0001, time + decay);
-            osc.connect(g);
-            g.connect(audioCtx.destination);
-            osc.start(time);
-            osc.stop(time + decay + 0.1);
+            this.chordPattern = Array.from({ length: 4 }, (_, i) =>
+                Math.floor(rnd(seed + i * 59) * scale.length)
+            );
         },
 
-        playMelody: function(seed, step, type, now, tempo) {
-            const osc = audioCtx.createOscillator();
-            const g = audioCtx.createGain();
-            const filter = audioCtx.createBiquadFilter();
-            
-            const scale = [1, 1.25, 1.5, 1.87, 2];
-            const noteIndex = Math.floor(seededRandom(seed + Math.floor(step/4)) * scale.length);
-            const freq = (60 + (seed % 40)) * scale[noteIndex];
-            osc.frequency.setValueAtTime(freq, now);
-
-            // Melody adjusted to 75% of original values
-            switch(type) {
-                case 0: osc.type = 'square'; g.gain.setValueAtTime(0.045, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.08); break;
-                case 1: osc.type = 'triangle'; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.06, now + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, now + tempo * 1.5); break;
-                case 2: osc.type = 'sawtooth'; filter.type = 'lowpass'; filter.frequency.setValueAtTime(300, now); filter.frequency.exponentialRampToValueAtTime(3000, now + 0.1); g.gain.setValueAtTime(0.06, now); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.4); break;
-                case 3: osc.type = 'sine'; g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.03, now + 0.2); g.gain.exponentialRampToValueAtTime(0.0001, now + 2.0); break;
-            }
-
-            osc.connect(filter);
-            filter.connect(g);
-            g.connect(audioCtx.destination);
-            osc.start(now);
-            osc.stop(now + 2.1);
-        },
-
-        start: async function(songId) {
+        async start(songId) {
             await this.init();
             this.stop();
-            isPlayingMusic = true;
-            const seed = parseInt(songId) || 0;
-            const type = seed % 4;
-            const genres = [
-                { t: 0.15, k: [1,0,0,0], s: [0,0,1,0] },
-                { t: 0.30, k: [1,0,0],   s: [0,1,1] },
-                { t: 0.12, k: [1,0,1,0], s: [0,0,0,1] },
-                { t: 0.50, k: [1,0,0,0], s: [0,0,0,0] }
-            ];
-            const cfg = genres[type];
-            let step = 0;
-            const loop = () => {
-                if (!isPlayingMusic) return;
-                const now = audioCtx.currentTime;
-                if (cfg.k[step % cfg.k.length]) this.playDrum('kick', now, 0.6, type);
-                if (cfg.s[step % cfg.s.length]) this.playDrum('snare', now, 0.3, type);
-                this.playMelody(seed, step, type, now, cfg.t);
-                step++;
-                setTimeout(loop, cfg.t * 1000);
-            };
-            loop();
+
+            const seed = stringToSeed(String(songId));
+            const bpm = 80 + Math.floor(rnd(seed + 99) * 70);
+            Tone.Transport.bpm.value = bpm;
+
+            const scales = [[0, 2, 4, 7, 9], [0, 3, 5, 7, 10], [0, 2, 4, 5, 7, 9, 11]];
+            const scale = scales[Math.floor(rnd(seed + 7) * scales.length)];
+            const root = 36 + Math.floor(rnd(seed + 13) * 24);
+
+            this.generatePatterns(seed, scale);
+
+            const melodyLoop = new Tone.Loop(time => {
+                const step = Math.floor(Tone.Transport.ticks / Tone.Time("16n").toTicks()) % 16;
+                const m = this.melodyPattern[step];
+                if (m.play) {
+                    const note = Tone.Midi(root + scale[m.deg] + m.oct * 12).toNote();
+                    this.synths.piano.triggerAttackRelease(note, "16n", time, m.vel * 0.8);
+                }
+            }, "16n").start(0);
+
+            const guitarLoop = new Tone.Loop(time => {
+                const step = Math.floor(Tone.Transport.ticks / Tone.Time("1n").toTicks()) % 4;
+                const deg = this.chordPattern[step];
+                const note = Tone.Midi(root + scale[deg] + 48).toNote();
+                this.synths.guitar.triggerAttackRelease(note, "8n", time, 0.4);
+            }, "1n").start(0);
+
+            const drumLoop = new Tone.Loop(time => {
+                const step = Math.floor(Tone.Transport.ticks / Tone.Time("16n").toTicks()) % 16;
+                const d = this.drumPattern[step];
+                if (d.hit) this.samplers.kick.triggerAttackRelease("C2", "8n", time, d.vel * 0.6);
+            }, "16n").start(0);
+
+            this.parts = [melodyLoop, guitarLoop, drumLoop];
+            Tone.Transport.start();
         },
-        stop: function() { isPlayingMusic = false; }
+
+        stop() {
+            Tone.Transport.stop();
+            Tone.Transport.cancel();
+            document.querySelectorAll('[id^="seek-"]').forEach(b => b.style.width = "0%");
+            this.parts.forEach(p => p.dispose());
+            this.parts = [];
+        }
     };
 
-    const playHandler = (e) => {
-        const btn = e.target.closest('.play-trigger');
+    // ---------------- LYRICS & PROGRESS SYNC ----------------
+    window.playLyricsFrom = function(startIndex) {
+        synth.cancel();
+        if (!window.lyricLines || !window.activeSongId) return;
+
+        const bar = document.getElementById(`seek-${window.activeSongId}`);
+        const container = bar ? bar.parentElement : null;
+        let i = startIndex;
+        let animFrame;
+
+        const sing = () => {
+            if (!window.activeSongId) return;
+
+            if (i >= window.lyricLines.length) {
+                stopPlayback();
+                if (bar) bar.style.width = "100%";
+                return;
+            }
+
+            const line = window.lyricLines[i++];
+            const u = new SpeechSynthesisUtterance(line);
+            
+            // CHROME FIX: Selection and Fallback
+            u.lang = 'uk-UA'; 
+            const ukVoice = getUkrainianVoice();
+            if (ukVoice) {
+                u.voice = ukVoice;
+            }
+
+            const words = line.split(/\s+/).length;
+            const estimatedDuration = Math.max(1500, words * 500); 
+            const startTime = performance.now();
+
+            const updateProgress = (time) => {
+                if (!bar) return;
+                const elapsed = time - startTime;
+                const linePct = Math.min(1, elapsed / estimatedDuration);
+                const overallPct = ((i - 1 + linePct) / window.lyricLines.length) * 100;
+                bar.style.width = overallPct + "%";
+                if (linePct < 1) animFrame = requestAnimationFrame(updateProgress);
+            };
+
+            u.onend = () => {
+                cancelAnimationFrame(animFrame);
+                if (window.activeSongId) setTimeout(sing, 300);
+            };
+
+            // Error listener for debugging Chrome
+            u.onerror = (e) => console.error("Speech Error:", e);
+
+            synth.speak(u);
+            animFrame = requestAnimationFrame(updateProgress);
+        };
+
+        sing();
+
+        if (container && !container.dataset.hooked) {
+            container.dataset.hooked = "true";
+            container.addEventListener("click", (e) => {
+                e.stopPropagation();
+                const rect = container.getBoundingClientRect();
+                const clickPct = (e.clientX - rect.left) / rect.width;
+                const targetLine = Math.floor(clickPct * window.lyricLines.length);
+                
+                cancelAnimationFrame(animFrame);
+                window.playLyricsFrom(targetLine);
+            });
+        }
+    };
+
+    // ---------------- UI ----------------
+    const playHandler = e => {
+        const btn = e.target.closest(".play-trigger");
         if (!btn) return;
-        const id = btn.getAttribute('data-song-id');
-        if (window.activeSongId === id && synth.speaking) { stopPlayback(); return; }
+
+        const id = btn.getAttribute("data-song-id");
+
+        if (window.activeSongId === id) {
+            stopPlayback();
+            return;
+        }
 
         stopPlayback();
         window.activeSongId = id;
-        btn.classList.replace('bi-play-circle-fill', 'bi-stop-circle-fill');
+        btn.classList.replace("bi-play-circle-fill", "bi-stop-circle-fill");
 
-        const fullText = document.getElementById(`lyric-${id}`).value;
-        const lines = fullText.split('\n').filter(l => l.trim() !== "");
         MusicEngine.start(id);
 
-        let currentLine = 0;
-        const singNextLine = () => {
-            if (!window.activeSongId || currentLine >= lines.length) {
-                if (currentLine >= lines.length) stopPlayback();
-                return;
-            }
-            const utter = new SpeechSynthesisUtterance(lines[currentLine]);
-            utter.pitch = 0.8 + (seededRandom(currentLine) * 0.6);
-            utter.rate = 0.9;
-            const langEl = document.getElementById('langSelect');
-            if(langEl) utter.lang = langEl.value;
-            utter.onend = () => {
-                currentLine++;
-                const pause = 200 + (seededRandom(currentLine) * 300);
-                setTimeout(singNextLine, pause);
-            };
-            const seekEl = document.getElementById(`seek-${id}`);
-            if(seekEl) seekEl.style.width = ((currentLine / lines.length) * 100) + '%';
-            synth.speak(utter);
-        };
-        singNextLine();
+        const lyricInput = document.getElementById(`lyric-${id}`);
+        if (lyricInput) {
+            window.lyricLines = lyricInput.value.split("\n").filter(l => l.trim());
+            window.playLyricsFrom(0);
+        }
     };
 
     function stopPlayback() {
         synth.cancel();
         MusicEngine.stop();
         window.activeSongId = null;
-        document.querySelectorAll('.play-trigger').forEach(b => {
-            b.classList.replace('bi-stop-circle-fill', 'bi-play-circle-fill');
-        });
+        document.querySelectorAll(".play-trigger").forEach(b =>
+            b.classList.replace("bi-stop-circle-fill", "bi-play-circle-fill")
+        );
     }
 
-    document.addEventListener('click', playHandler);
+    document.addEventListener("click", playHandler);
 })();
 </script>

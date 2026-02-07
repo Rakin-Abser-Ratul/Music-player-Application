@@ -46,7 +46,6 @@
             min-height: 80vh;
         }
 
-        /* Simplified Loading States (No Keyframes) */
         #loader {
             display: none;
         }
@@ -61,7 +60,7 @@
         .loading-active {
             opacity: 0.4;
             pointer-events: none;
-            transition: opacity 0.3s ease; /* Simple transition instead of keyframes */
+            transition: opacity 0.3s ease;
         }
 
         .text-blue {
@@ -130,28 +129,42 @@
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
 
     <script>
         let activeView = 'table';
         let currentPage = 1;
         let isFetching = false;
 
-        // --- NEW: Pagination Handler for Table View ---
+        // Transliterate Cyrillic to Latin (simple for UI labels)
+        function transliterate(text) {
+            const map = {
+                'А':'A','Б':'B','В':'V','Г':'H','Ґ':'G','Д':'D','Е':'E','Є':'Ye','Ж':'Zh','З':'Z',
+                'И':'Y','І':'I','Ї':'Yi','Й':'Y','К':'K','Л':'L','М':'M','Н':'N','О':'O','П':'P',
+                'Р':'R','С':'S','Т':'T','У':'U','Ф':'F','Х':'Kh','Ц':'Ts','Ч':'Ch','Ш':'Sh','Щ':'Shch',
+                'Ь':'','Ю':'Yu','Я':'Ya',
+                'а':'a','б':'b','в':'v','г':'h','ґ':'g','д':'d','е':'e','є':'ye','ж':'zh','з':'z',
+                'и':'y','і':'i','ї':'yi','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o','п':'p',
+                'р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts','ч':'ch','ш':'sh','щ':'shch',
+                'ь':'','ю':'yu','я':'ya'
+            };
+            return text.split('').map(c => map[c] || c).join('');
+        }
+
         function changePage(pageNumber) {
             if (pageNumber < 1 || isFetching) return;
             currentPage = pageNumber;
-            // We pass 'false' to updateMusicList because pagination
-            // should replace the content, not append it.
             updateMusicList(false);
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         function updateUIVocabulary() {
             const isUk = document.getElementById('langSelect').value.startsWith('uk');
-            document.getElementById('lbl-lang').innerText = isUk ? "Мова" : "Language";
-            document.getElementById('lbl-seed').firstChild.textContent = isUk ? "Сід " : "Seed ";
-            document.getElementById('lbl-likes').innerText = isUk ? "Поріг лайків" : "Likes Threshold";
-            document.getElementById('lbl-loading').innerText = isUk ? "Завантаження..." : "Loading more tracks...";
+
+            document.getElementById('lbl-lang').innerText = isUk ? transliterate("Мова") : "Language";
+            document.getElementById('lbl-seed').firstChild.textContent = isUk ? transliterate("Сід ") : "Seed ";
+            document.getElementById('lbl-likes').innerText = isUk ? transliterate("Поріг лайків") : "Likes Threshold";
+            document.getElementById('lbl-loading').innerText = isUk ? transliterate("Завантаження...") : "Loading more tracks...";
         }
 
         function toggleView(viewType) {
@@ -188,7 +201,7 @@
             updateMusicList(false);
         }
 
-               async function updateMusicList(append = false) {
+        async function updateMusicList(append = false) {
             if (isFetching) return;
             isFetching = true;
 
@@ -216,16 +229,10 @@
                 const html = await response.text();
 
                 if (append && activeView === 'gallery') {
-                    // Find the grid container inside the render area
                     const grid = target.querySelector('.full-width-music-grid');
-                    if (grid) {
-                        // We append the HTML (which won't have the wrapper div because currentPage > 1)
-                        grid.insertAdjacentHTML('beforeend', html);
-                    } else {
-                        target.innerHTML = html;
-                    }
+                    if (grid) grid.insertAdjacentHTML('beforeend', html);
+                    else target.innerHTML = html;
                 } else {
-                    // For Table View or a Fresh Search, replace the whole area
                     target.innerHTML = html;
                     if (!append) window.scrollTo({top: 0, behavior: 'auto'});
                 }
@@ -239,7 +246,6 @@
             }
         }
 
-        // Infinite Scroll Observer (Only active for Gallery)
         const observer = new IntersectionObserver((entries) => {
             if (entries[0].isIntersecting && !isFetching && activeView === 'gallery') {
                 currentPage++;
